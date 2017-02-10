@@ -1,6 +1,9 @@
 SQA FFmpeg bindings
 ================
 
+# NOTE: This library has been assimilated into the [main SQA repo](https://github.com/eeeeeta/sqa) - this repo is **no longer updated**! Go to the new location for the latest code.
+
+
 [![Crates.io badge](https://img.shields.io/crates/v/sqa-ffmpeg.svg)](https://crates.io/crates/sqa-ffmpeg)
 [![Docs](https://docs.rs/sqa-ffmpeg/badge.svg)](https://docs.rs/sqa-ffmpeg)
 
