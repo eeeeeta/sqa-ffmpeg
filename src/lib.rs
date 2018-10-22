@@ -1,7 +1,6 @@
-#![recursion_limit="4096"]
 extern crate ffmpeg_sys;
-#[macro_use]
-extern crate error_chain;
+extern crate failure;
+#[macro_use] extern crate failure_derive;
 extern crate libc;
 extern crate sample;
 extern crate chrono;
@@ -11,10 +10,11 @@ pub mod frame;
 #[macro_use]
 mod ffi;
 
-pub use errors::{MediaResult, Error, ErrorKind};
+pub use errors::{MediaResult, MediaError};
 pub use frame::Frame;
 pub use chrono::Duration;
 use ffmpeg_sys::*;
+use ffmpeg_sys::AVMediaType::AVMEDIA_TYPE_AUDIO;
 use std::ptr;
 use ffi::str_to_cstr;
 
@@ -80,7 +80,7 @@ pub struct MediaContext {
 impl MediaContext {
     pub fn network_init(&mut self) -> MediaResult<()> {
         if self.net {
-            bail!(ErrorKind::OnceOnly);
+            Err(MediaError::OnceOnly)?
         }
         call!(avformat_network_init());
         self.net = true;
@@ -91,7 +91,7 @@ impl MediaContext {
 pub fn init() -> MediaResult<MediaContext> {
     unsafe {
         if INIT_ONCE {
-            bail!(ErrorKind::OnceOnly);
+            Err(MediaError::OnceOnly)?
         }
         av_register_all();
         INIT_ONCE = true;
@@ -119,14 +119,14 @@ impl MediaFile {
             av_find_best_stream(ctx, AVMEDIA_TYPE_AUDIO, -1, -1, ptr::null_mut(), 0)
         };
         if stream_idx < 0 {
-            Err(ErrorKind::StreamNotFound)?;
+            Err(MediaError::StreamNotFound)?;
         }
         let dec_ctx = unsafe {
             let stream = *(*ctx).streams.offset(stream_idx as isize);
             let dec_ctx = (*stream).codec;
             let decoder = avcodec_find_decoder((*dec_ctx).codec_id);
             if decoder.is_null() {
-                Err(ErrorKind::DecoderNotFound)?;
+                Err(MediaError::DecoderNotFound)?;
             }
             call!(avcodec_open2(dec_ctx, decoder, ptr::null_mut()));
             dec_ctx
@@ -154,7 +154,7 @@ impl MediaFile {
         };
         let base = unsafe { (*self.audio_ctx).time_base };
         if ptr.is_null() {
-            bail!(ErrorKind::AllocationFailed);
+            Err(MediaError::AllocationFailed)?
         }
         call!(avcodec_receive_frame(self.audio_ctx, ptr));
         Ok(unsafe { Frame::from_ptr(ptr, base)? })
@@ -177,7 +177,7 @@ impl MediaFile {
             to
         }
         else {
-            bail!(ErrorKind::TooManySeconds);
+            Err(MediaError::TooManySeconds)?
         };
         call!(av_seek_frame(self.format_ctx, -1, to, 0));
         unsafe {
@@ -193,15 +193,15 @@ impl Iterator for MediaFile {
             match self.receive_frame() {
                 Ok(frame) => return Some(Ok(frame)),
                 Err(a) => {
-                    if let ErrorKind::TemporarilyUnavailable = *a.kind() {
+                    if let MediaError::TemporarilyUnavailable = a {
                         if let Err(b) = self.send_packet() {
-                            if let ErrorKind::EOF = *b.kind() {
+                            if let MediaError::EOF = b {
                                 return None;
                             }
                             return Some(Err(b));
                         }
                     }
-                    else if let ErrorKind::EOF = *a.kind() {
+                    else if let MediaError::EOF = a {
                         return None;
                     }
                     else {

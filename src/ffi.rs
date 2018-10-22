@@ -1,5 +1,5 @@
 //! FFI macros and handy functions.
-use errors::{MediaResult, ErrorKind, ChainErr};
+use errors::{MediaResult, MediaError};
 use std::ffi::CString;
 macro_rules! call {
     ($name:ident($($arg:expr),*)) => {{
@@ -8,8 +8,8 @@ macro_rules! call {
             $name($($arg),*)
         };
         if ret < 0 {
-            use ErrorKind::*;
-            bail!(match ret {
+            use MediaError::*;
+            Err(match ret {
                 _x if -_x == libc::EAGAIN => TemporarilyUnavailable,
                 _x if -_x == libc::ENOMEM => AllocationFailed,
                 _x if -_x == libc::EINVAL => ProgrammerError,
@@ -43,8 +43,8 @@ macro_rules! call {
                 AVERROR_HTTP_FORBIDDEN => HttpForbidden,
                 AVERROR_HTTP_OTHER_4XX => HttpOther4xx,
                 AVERROR_HTTP_SERVER_ERROR => HttpServerError,
-                _ => UnknownErrorCode(stringify!($name), ret)
-            });
+                _ => UnknownErrorCode { from: stringify!($name), code: ret }
+            })?
         }
         ret
     }};
@@ -69,5 +69,5 @@ macro_rules! sample_impl {
 }
 /// Helper function to convert Rust `&str`s to `CString`s.
 pub fn str_to_cstr(st: &str) -> MediaResult<CString> {
-    Ok(CString::new(st).chain_err(|| ErrorKind::NulError)?)
+    Ok(CString::new(st).map_err(|_| MediaError::NulError)?)
 }
